@@ -28,7 +28,7 @@ class MovieCreateSchema(BaseModel):
     status: str = Field(..., pattern="^(Released|Post Production|In Production)$")
     budget: float = Field(..., ge=0)
     revenue: float = Field(..., ge=0)
-    country: str = Field(..., pattern="^[A-Z]{2}$")
+    country: str = Field(..., pattern="^[A-Z]{3}$")
     genres: list[str]
     actors: list[str]
     languages: list[str]

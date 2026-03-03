@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError, DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import selectinload
+from pydantic import ValidationError
 
 from database import get_db, MovieModel
 from database.models import CountryModel, GenreModel, ActorModel, LanguageModel
@@ -49,7 +50,7 @@ async def get_movies(
             MovieListItemSchema(
                 id=movie.id,
                 name=movie.name,
-                date=movie.date.isoformat(),
+                date=movie.date,
                 score=movie.score,
                 overview=movie.overview,
             )
@@ -89,8 +90,6 @@ async def create_movie(
     if not country:
         country = CountryModel(code=movie_data.country)
         db.add(country)
-        await db.commit()
-        await db.refresh(country)
 
     genres_query = await db.execute(
         select(GenreModel).where(GenreModel.name.in_(movie_data.genres))
@@ -114,22 +113,16 @@ async def create_movie(
     for genre_name in genres_to_create:
         genre = GenreModel(name=genre_name)
         db.add(genre)
-        await db.commit()
-        await db.refresh(genre)
         genres.append(genre)
 
     for actor_name in actors_to_create:
         actor = ActorModel(name=actor_name)
         db.add(actor)
-        await db.commit()
-        await db.refresh(actor)
         actors.append(actor)
 
     for language_name in languages_to_create:
         language = LanguageModel(name=language_name)
         db.add(language)
-        await db.commit()
-        await db.refresh(language)
         languages.append(language)
 
     movie = MovieModel(
@@ -159,7 +152,7 @@ async def create_movie(
     return MovieDetailSchema(
         id=movie.id,
         name=movie.name,
-        date=movie.date.isoformat(),
+        date=movie.date,
         score=movie.score,
         overview=movie.overview,
         status=movie.status,
@@ -199,7 +192,7 @@ async def get_movie_detail(movie_id: int, db: AsyncSession = Depends(get_db)):
     return MovieDetailSchema(
         id=movie.id,
         name=movie.name,
-        date=movie.date.isoformat(),
+        date=movie.date,
         score=movie.score,
         overview=movie.overview,
         status=movie.status,
@@ -238,8 +231,18 @@ async def delete_movie(movie_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.patch("/movies/{movie_id}/", response_model=dict)
 async def update_movie(
-    movie_id: int, movie_data: MovieUpdateSchema, db: AsyncSession = Depends(get_db)
+    movie_id: int,
+    movie_data: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
 ):
+    try:
+        validated_data = MovieUpdateSchema.model_validate(movie_data)
+    except ValidationError:
+        raise HTTPException(status_code=400, detail="Invalid input data.")
+
+    if all(value is None for value in validated_data.model_dump().values()):
+        raise HTTPException(status_code=400, detail="Invalid input data.")
+
     try:
         movie_query = await db.execute(
             select(MovieModel).where(MovieModel.id == movie_id)
@@ -253,7 +256,7 @@ async def update_movie(
             status_code=404, detail="Movie with the given ID was not found."
         )
 
-    for field, value in movie_data.model_dump().items():
+    for field, value in validated_data.model_dump().items():
         if value is not None:
             setattr(movie, field, value)
 
