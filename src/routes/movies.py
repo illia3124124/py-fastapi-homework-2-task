@@ -81,8 +81,13 @@ async def get_movies(
 
 @router.post("/movies/", response_model=MovieDetailSchema, status_code=201)
 async def create_movie(
-    movie_data: MovieCreateSchema, db: AsyncSession = Depends(get_db)
+    movie_data: dict = Body(...), db: AsyncSession = Depends(get_db)
 ):
+    try:
+        movie_data = MovieCreateSchema.model_validate(movie_data)
+    except ValidationError:
+        raise HTTPException(status_code=400, detail="Invalid input data.")
+
     country_query = await db.execute(
         select(CountryModel).where(CountryModel.code == movie_data.country)
     )
